@@ -9,7 +9,7 @@ const PLACE_ID = 109983668079237;
 const DISCORD_WEBHOOK =
   "https://discord.com/api/webhooks/1455373841336373270/ZFAUB-0hauphf_5TVegY9amzTSLaEgb_2O_EBGiA_5a-f7y0-h0WbQ7uuklspa11Z9v0";
 
-// Store high-value verified servers
+// Store only verified servers with rich Brainrots
 let verifiedServers = [];
 
 app.use(express.json());
@@ -18,15 +18,14 @@ app.get("/", (req, res) => {
   res.send("Backend online");
 });
 
-/* 🔍 Get LOW PLAYER servers */
+/* 🔍 Scan low-player servers (not mandatory, can be automatic client reports) */
 app.get("/scan", async (req, res) => {
   try {
     const url = `https://games.roblox.com/v1/games/${PLACE_ID}/servers/Public?sortOrder=Asc&limit=100`;
     const r = await axios.get(url);
 
-    // Filter for low-player servers (<=3)
     const servers = r.data.data
-      .filter(s => s.playing <= 3)
+      .filter(s => s.playing <= 3) // low-player filter
       .map(s => ({
         id: s.id,
         players: s.playing
@@ -38,56 +37,36 @@ app.get("/scan", async (req, res) => {
   }
 });
 
-/* 🔥 Verified rich servers (shown in client GUI) */
+/* 🔥 Verified rich servers for clients */
 app.get("/servers", (req, res) => {
-  const TARGET_BRAINROTS = [
-    "Strawberry Elephant",
-    "Meowl",
-    "Skibidi Toilet",
-    "Dragon Cannelloni",
-    "Headless Horseman",
-    "Capitano Moby",
-    "Burguro And Fryuro",
-    "La Secret Combinasion",
-    "Garama and Madundung",
-    "Ketupat Kepat",
-    "Los Primos",
-    "Esok Sekolah",
-    "Tralaledon"
-  ];
-
-  // Only send servers with valid Brainrots
-  const filtered = verifiedServers.filter(s =>
-    TARGET_BRAINROTS.includes(s.brainrot)
-  );
-
-  res.json(filtered);
+  res.json(verifiedServers);
 });
 
-/* 🤖 Client reports a rich/high-value server */
+/* 🤖 Client reports a rich server */
 app.post("/report", async (req, res) => {
   const data = req.body;
+  if (!data.id || !data.brainrot || !data.value) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
 
-  // Deduplicate by server ID
+  // Deduplicate
   verifiedServers = verifiedServers.filter(s => s.id !== data.id);
 
-  // Add to top
+  // Add new report at the front
   verifiedServers.unshift(data);
-  verifiedServers = verifiedServers.slice(0, 25); // Keep last 25 rich servers
 
-  // Discord alert
-  try {
-    await axios.post(DISCORD_WEBHOOK, {
-      content:
+  // Keep only latest 25 servers
+  verifiedServers = verifiedServers.slice(0, 25);
+
+  // Send Discord alert
+  await axios.post(DISCORD_WEBHOOK, {
+    content:
 `🔥 **RICH SERVER FOUND**
 🧠 Brainrot: **${data.brainrot}**
 💰 Value: **${Math.floor(data.value / 1e6)}M/s**
 👥 Players: ${data.players}
 🆔 Server ID: ${data.id}`
-    });
-  } catch (err) {
-    console.error("Failed to send Discord webhook", err.message);
-  }
+  });
 
   res.json({ ok: true });
 });
