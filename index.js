@@ -1,67 +1,79 @@
 const express = require("express");
 const axios = require("axios");
+const cors = require("cors");
 const app = express();
 
-const PORT = process.env.PORT || 10000;
-const PLACE_ID = 109983668079237;
+const PORT = process.env.PORT || 3000;
+const PLACE_ID = 109983668079237; // SAB Place ID
 
-// Discord webhook
+// ✅ Discord webhook for alerts
 const DISCORD_WEBHOOK =
   "https://discord.com/api/webhooks/1455373841336373270/ZFAUB-0hauphf_5TVegY9amzTSLaEgb_2O_EBGiA_5a-f7y0-h0WbQ7uuklspa11Z9v0";
 
-// Stores rich Brainrots across servers
-let verifiedServers = [];
-
+// Allow requests from any origin
+app.use(cors());
 app.use(express.json());
 
+// Keep the latest rich servers (one per Brainrot per server)
+let verifiedServers = [];
+
+// Health check
 app.get("/", (req, res) => {
-  res.send("Backend online");
+  res.send("Backend online ✅");
 });
 
-// Optional low-player scan
+// Optional: scan for low-player servers (≤3 players)
 app.get("/scan", async (req, res) => {
   try {
     const url = `https://games.roblox.com/v1/games/${PLACE_ID}/servers/Public?sortOrder=Asc&limit=100`;
-    const r = await axios.get(url);
-    const servers = r.data.data
+    const response = await axios.get(url);
+    const servers = response.data.data
       .filter(s => s.playing <= 3)
       .map(s => ({ id: s.id, players: s.playing }));
     res.json(servers);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "scan failed" });
   }
 });
 
-// Return rich Brainrot servers
+// Return all verified rich servers
 app.get("/servers", (req, res) => {
   res.json(verifiedServers);
 });
 
-// Client reports a rich Brainrot
+// Clients report a rich Brainrot
 app.post("/report", async (req, res) => {
-  const data = req.body;
-  if (!data.id || !data.brainrot || !data.value) return res.status(400).json({ error: "Missing fields" });
+  const { id, brainrot, value, players } = req.body;
+  if (!id || !brainrot || !value) return res.status(400).json({ error: "Missing fields" });
 
-  // Remove duplicate Brainrot in same server
-  verifiedServers = verifiedServers.filter(s => !(s.id === data.id && s.brainrot === data.brainrot));
+  // Remove duplicates (same Brainrot in same server)
+  verifiedServers = verifiedServers.filter(s => !(s.id === id && s.brainrot === brainrot));
 
-  // Add new report
-  verifiedServers.unshift(data);
-  verifiedServers = verifiedServers.slice(0, 50); // keep latest 50
+  // Add new report to the front
+  verifiedServers.unshift({ id, brainrot, value, players: players or 1 });
 
-  // Send Discord alert
-  await axios.post(DISCORD_WEBHOOK, {
-    content:
+  // Keep only latest 50 entries
+  verifiedServers = verifiedServers.slice(0, 50);
+
+  // Discord alert
+  try {
+    await axios.post(DISCORD_WEBHOOK, {
+      content:
 `🔥 **RICH SERVER FOUND**
-🧠 Brainrot: **${data.brainrot}**
-💰 Value: **${Math.floor(data.value/1e6)}M/s**
-👥 Players: ${data.players}
-🆔 Server ID: ${data.id}`
-  });
+🧠 Brainrot: **${brainrot}**
+💰 Value: **${Math.floor(value/1e6)}M/s**
+👥 Players: ${players || "?"}
+🆔 Server ID: ${id}`
+    });
+  } catch (err) {
+    console.error("Discord alert failed:", err.message);
+  }
 
   res.json({ ok: true });
 });
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log("Server listening on port " + PORT);
+  console.log(`Backend listening on port ${PORT}`);
 });
+
