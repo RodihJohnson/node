@@ -5,27 +5,24 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 const PLACE_ID = 109983668079237;
 
-// ✅ YOUR REAL DISCORD WEBHOOK
+// ✅ Discord webhook
 const DISCORD_WEBHOOK =
   "https://discord.com/api/webhooks/1455373841336373270/ZFAUB-0hauphf_5TVegY9amzTSLaEgb_2O_EBGiA_5a-f7y0-h0WbQ7uuklspa11Z9v0";
 
-// Store only verified servers with rich Brainrots
 let verifiedServers = [];
 
 app.use(express.json());
 
-app.get("/", (req, res) => {
-  res.send("Backend online");
-});
+app.get("/", (req, res) => res.send("Backend online"));
 
-/* 🔍 Scan low-player servers (not mandatory, can be automatic client reports) */
+// Get low-player servers
 app.get("/scan", async (req, res) => {
   try {
     const url = `https://games.roblox.com/v1/games/${PLACE_ID}/servers/Public?sortOrder=Asc&limit=100`;
     const r = await axios.get(url);
 
     const servers = r.data.data
-      .filter(s => s.playing <= 3) // low-player filter
+      .filter(s => s.playing <= 3)
       .map(s => ({
         id: s.id,
         players: s.playing
@@ -37,40 +34,32 @@ app.get("/scan", async (req, res) => {
   }
 });
 
-/* 🔥 Verified rich servers for clients */
-app.get("/servers", (req, res) => {
-  res.json(verifiedServers);
-});
+// Return verified rich servers
+app.get("/servers", (req, res) => res.json(verifiedServers));
 
-/* 🤖 Client reports a rich server */
+// Client reports Brainrot found
 app.post("/report", async (req, res) => {
   const data = req.body;
-  if (!data.id || !data.brainrot || !data.value) {
-    return res.status(400).json({ error: "Missing required fields" });
-  }
 
-  // Deduplicate
-  verifiedServers = verifiedServers.filter(s => s.id !== data.id);
+  // Deduplicate only if same Brainrot in same server
+  verifiedServers = verifiedServers.filter(
+    s => !(s.id === data.id && s.brainrot === data.brainrot)
+  );
 
-  // Add new report at the front
   verifiedServers.unshift(data);
+  verifiedServers = verifiedServers.slice(0, 50); // keep latest 50
 
-  // Keep only latest 25 servers
-  verifiedServers = verifiedServers.slice(0, 25);
-
-  // Send Discord alert
+  // Discord alert
   await axios.post(DISCORD_WEBHOOK, {
     content:
-`🔥 **RICH SERVER FOUND**
-🧠 Brainrot: **${data.brainrot}**
-💰 Value: **${Math.floor(data.value / 1e6)}M/s**
-👥 Players: ${data.players}
-🆔 Server ID: ${data.id}`
+      `🔥 **RICH BRAINROT FOUND**\n` +
+      `🧠 Brainrot: **${data.brainrot}**\n` +
+      `💰 Value: **${Math.floor(data.value / 1e6)}M/s**\n` +
+      `👥 Players: ${data.players}\n` +
+      `🆔 Server ID: ${data.id}`
   });
 
   res.json({ ok: true });
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log("Server listening on port " + PORT);
-});
+app.listen(PORT, "0.0.0.0", () => console.log("Server listening on port " + PORT));
